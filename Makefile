@@ -1,4 +1,4 @@
-CC = clang
+CC = gcc
 CDEVFLAGS = -std=c99 -g -Wall -Wextra
 CRELFLAGS = -std=c99 -Ofast -DNDEBUG
 # CBENCHFLAGS = -std=c99 -Ofast -DNDEBUG -g -pg
