@@ -4,7 +4,7 @@ CRELFLAGS = -std=c99 -Ofast -DNDEBUG
 # CBENCHFLAGS = -std=c99 -Ofast -DNDEBUG -g -pg
 # CVISFLAGS = -std=c99 -g -Wall -Wextra -lraylib
 LDFLAGS = 
-LDLIBS = -lm -lraylib
+LDLIBS = -lm -lraylib -lGL
 
 SRC = *.c
 OBJ = $(SRC:.c=.o)
@@ -22,7 +22,7 @@ dev:
 gdb: dev
 	gdb ./main
 
-run: rel
+run:
 	./main
 
 -include ${DEP}

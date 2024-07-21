@@ -2,9 +2,10 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include <stdlib.h>
-#include <time.h>
+// #include <time.h>
 
-#define SEED time(NULL)
+// #define SEED time(NULL)
+#define SEED 42
 
 #define BTH_SIMPLEX_IMPLEMENTATION
 #include "bth_simplex.h"
@@ -41,16 +42,26 @@
 
 #define BLOB_SIZE 2
 // #define BLOB_COUNT 4096
-#define BLOB_COUNT 256
+// #define BLOB_COUNT 256
+#define BLOB_COUNT 4
+
+#define VEC2FMT "{ x:%f, y:%f }"
+#define VEC2IFMT "{ x:%d, y:%d }"
 
 // #define DRAW_BLOB(vec2) DrawCircleV((vec2), BLOB_SIZE, FG_COLOR)
 #define DRAW_BLOB(vec2) DrawPixelV((vec2), WHITE)
 
+typedef struct Vector2i {
+    int x;
+    int y;
+} Vector2i;
+
 typedef struct Blob {
-    Vector2 pos;
-    Vector2 vel;
+    Vector2i pos;
+    Vector2i vel;
     // float acc;
     float rot;
+    float foo;
 } Blob;
 
 struct simulation {
@@ -120,7 +131,8 @@ void sim_init_blobs(struct simulation *sim)
     {
         sim->blobs[i].pos.x = randf() * WIN_WIDTH;
         sim->blobs[i].pos.y = randf() * WIN_HEIGHT;
-        sim->blobs[i].vel = CLITERAL(Vector2){ VEL, VEL };
+        sim->blobs[i].vel.x = VEL;
+        sim->blobs[i].vel.y = VEL;
         sim->blobs[i].rot = randf();
     }
 }
@@ -130,11 +142,11 @@ void sim_update_blobs(struct simulation *sim)
     for (int i = 0; i < BLOB_COUNT; i++)
     {
         Blob *blob = &sim->blobs[i];
-        Vector2 *bpos = &blob->pos;
-        Vector2 *vel = &blob->vel;
+        Vector2i *bpos = &blob->pos;
+        Vector2i *vel = &blob->vel;
 
-        float x = floorf(bpos->x / SCALE) * SCALE_FACTOR;
-        float y = floorf(bpos->y / SCALE) * SCALE_FACTOR;
+        float x = floor((float)bpos->x / SCALE) * SCALE_FACTOR;
+        float y = floor((float)bpos->y / SCALE) * SCALE_FACTOR;
         float z = sim->zoff;
 
         float a = perlin_fbm3d(OCTAVES, x, y, z) * PI;
@@ -160,15 +172,15 @@ void sim_update_blobs(struct simulation *sim)
 
         cosx = isnan(cosx) ? 1 : cosx;
         sinx = isnan(sinx) ? 0 : sinx;
-        
+
         float nx = bpos->x + cosx * vel->x;
         float ny = bpos->y + sinx * vel->y;
 
         // if (!isnan(nx))
-            bpos->x = nx;
+            bpos->x = (int)nx;
 
         // if (!isnan(ny))
-            bpos->y = ny;
+            bpos->y = (int)ny;
         // bpos->x = xclamp(nx);
         // bpos->y = yclamp(ny);
 
@@ -180,39 +192,61 @@ void sim_draw_blobs(struct simulation *sim)
 {
     for (int i = 0; i < BLOB_COUNT; i++)
     {
-        DRAW_BLOB(sim->blobs[i].pos);
+        // DRAW_BLOB(sim->blobs[i].pos);
+        Vector2i *v = &sim->blobs[i].pos;
+        Vector2 fv = {v->x, v->y};
+        DRAW_BLOB(fv);
+    }
+}
+
+void print_pos(Vector2i pos[BLOB_COUNT])
+{
+    TraceLog(LOG_INFO, "Pos:");
+    for (int i = 0; i < BLOB_COUNT; i++)
+    {
+        TraceLog(LOG_INFO, "\t"VEC2IFMT, pos[i].x, pos[i].y);
     }
 }
 
 int main(void)
 {
     SetTraceLogLevel(LOG_WARNING);
-    // SetTargetFPS(60);
+    SetTargetFPS(60);
     InitWindow(WIN_WIDTH, WIN_HEIGHT, "Bob's Particle Game");
 
     RenderTexture2D tex0 = LoadRenderTexture(WIN_WIDTH, WIN_HEIGHT);
-    RenderTexture2D tex1 = LoadRenderTexture(WIN_WIDTH, WIN_HEIGHT);
 
     SetTraceLogLevel(LOG_INFO);
-    // Texture2D tex2 = LoadTexture("sample.png");
 
     Shader shader = LoadShader(0, "shader.glsl");
 
-    // int resLoc = GetShaderLocation(shader, "iResolution");
-    // float res[2] = {WIN_WIDTH, WIN_HEIGHT};
-    // SetShaderValue(shader, resLoc, res, SHADER_UNIFORM_VEC2);
+    char *com_code = LoadFileText("compute.glsl");
+    int com_shader = rlCompileShader(com_code, RL_COMPUTE_SHADER);
+    int com_prog = rlLoadComputeShaderProgram(com_shader);
+    UnloadFileText(com_code);
 
-    int tex0Loc = GetShaderLocation(shader, "texture0");
-    int tex1Loc = GetShaderLocation(shader, "texture1");
-    int blobsLoc = GetShaderLocation(shader, "blobs");
+    int resLoc = GetShaderLocation(shader, "iResolution");
+    float res[2] = {WIN_WIDTH, WIN_HEIGHT};
+    SetShaderValue(shader, resLoc, res, SHADER_UNIFORM_VEC2);
 
-    int frameLoc = GetShaderLocation(shader, "s_frame_count");
+    int comResLoc = rlGetLocationUniform(com_shader, "iResolution");
+    int comFrameLoc = rlGetLocationUniform(com_shader, "iFrame");
+
+    int tex0_loc = GetShaderLocation(shader, "texture0");
+    int blobs_pos_loc = GetShaderLocation(shader, "blobs_pos");
+
+    int frame_loc = GetShaderLocation(shader, "iFrame");
     SetShaderValue(shader, 0, 0, SHADER_UNIFORM_INT);
-   
+
     uint32_t frame_count = 0;
     uint32_t update_blob_frame = 100;
     uint32_t draw_frame = 100;
+
     Blob blobs[BLOB_COUNT] = {0};
+
+    Vector2i blobs_pos[BLOB_COUNT] = {0};
+    // Vector2 blobs_vel = {0};
+    // float blobs_rot[BLOB_COUNT] = {0};
 
     g_seed = SEED;
 
@@ -228,66 +262,94 @@ int main(void)
 
     log_infos();
 
-    BeginTextureMode(tex0);
-        ClearBackground(BLACK);
-        sim_draw_blobs(&sim);
-    EndTextureMode();
+    for (int i = 0; i < BLOB_COUNT; i++)
+    {
+        blobs_pos[i] = sim.blobs[i].pos;
+    }
 
-    BeginTextureMode(tex1);
-        // DrawRectangle(50, 50, 200, 200, YELLOW);
-        ClearBackground(BLACK);
-    EndTextureMode();
+    int ssbo_pos0 = rlLoadShaderBuffer(
+        BLOB_COUNT * sizeof(Vector2i),
+        NULL,
+        // blobs_pos,
+        RL_DYNAMIC_COPY
+    );
+    
+    int ssbo_pos1 = rlLoadShaderBuffer(
+        BLOB_COUNT * sizeof(Vector2i),
+        // NULL,
+        blobs_pos,
+        RL_DYNAMIC_COPY
+    );
+    
+    // int ssbo_rot1 = rlLoadShaderBuffer(
+    //     BLOB_COUNT * sizeof(float),
+    //     // NULL,
+    //     blobs_rot,
+    //     RL_DYNAMIC_COPY
+    // );
+  
+    SetShaderValueTexture(shader, tex0_loc, tex0.texture);
+    // SetShaderValueTexture(shader, tex1_loc, tex1.texture);
 
-    RenderTexture2D *src;
-    RenderTexture2D *dst;
+    // rlBindShaderBuffer(ssbo_pos0, 1);
+    // rlBindShaderBuffer(ssbo_pos1, 2);
+
+    int ssbo_src = ssbo_pos1;
+    int ssbo_dst = ssbo_pos0;
 
     while (!WindowShouldClose())
     {
-        // if (!(frame_count % update_blob_frame))
-        // {
-        //     sim_update_blobs(&sim);
-        // }
-        
-        SetShaderValue(shader, frameLoc, &frame_count, SHADER_UNIFORM_INT);
+        rlBindShaderBuffer(ssbo_src, 1);
+        rlBindShaderBuffer(ssbo_dst, 2);
 
-        // when frame_count is odd, draw on tex0
-        if (frame_count % 2)
-        {
-            src = &tex1;
-            dst = &tex0;
-        }
-        // when frame_count is even, draw on tex1
-        else
-        {
-            src = &tex0;
-            dst = &tex1;
-        }
-        
-        if (!(frame_count % draw_frame))
-        {
-            BeginTextureMode(*dst);
-                DrawTexture(src->texture, 0, 0, WHITE);
-            EndTextureMode();
+        SetShaderValue(
+            shader,
+            frame_loc,
+            &frame_count,
+            SHADER_UNIFORM_INT
+        );
 
-            BeginDrawing();
-                BeginShaderMode(shader);
-                    SetShaderValueTexture(shader, tex0Loc, tex0.texture);
-                    SetShaderValueTexture(shader, tex1Loc, tex1.texture);
+        rlEnableShader(com_prog);
+            rlSetUniform(
+                comFrameLoc,
+                &frame_count,
+                SHADER_UNIFORM_INT,
+                1
+            );
 
-                    ClearBackground(BLACK);
-                    DrawTexture(dst->texture, 0, 0, WHITE);
-                EndShaderMode();
-            EndDrawing();
-        }
+            rlSetUniform(comResLoc, res, SHADER_UNIFORM_VEC2, 1);
+            rlComputeShaderDispatch(BLOB_COUNT, 1, 1);
+        rlDisableShader();
 
-        // DrawFPS(0, 0);
+        BeginTextureMode(tex0);
+            BeginShaderMode(shader);
+                DrawTexture(tex0.texture, 0, 0, WHITE);
+            EndShaderMode();
+        EndTextureMode();
+
+        BeginDrawing();
+            ClearBackground(BLANK);
+
+            DrawTexture(tex0.texture, 0, 0, WHITE);
+            
+            DrawFPS(0, 0);
+        EndDrawing();
+
+        ssbo_src ^= ssbo_dst;
+        ssbo_dst ^= ssbo_src;
+        ssbo_src ^= ssbo_dst;
+
         frame_count++;
     }
 
     SetTraceLogLevel(LOG_WARNING);
     UnloadRenderTexture(tex0);
-    UnloadRenderTexture(tex1);
     UnloadShader(shader);
+
+    rlUnloadShaderBuffer(ssbo_pos0);
+    rlUnloadShaderBuffer(ssbo_pos1);
+    rlUnloadShaderProgram(com_prog);
+
     CloseWindow();
 
     return 0;
