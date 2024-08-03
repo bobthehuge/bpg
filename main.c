@@ -1,8 +1,11 @@
+#define _POSIX_C_SOURCE 199309L
+
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
 #include <stdlib.h>
-// #include <time.h>
+#include <time.h>
+#include <unistd.h>
 
 // #define SEED time(NULL)
 #define SEED 42
@@ -48,6 +51,8 @@
 #define VEC2FMT "{ x:%f, y:%f }"
 #define VEC2IFMT "{ x:%d, y:%d }"
 
+#define UNIFORM_DVEC2 (2*sizeof(double))
+
 // #define DRAW_BLOB(vec2) DrawCircleV((vec2), BLOB_SIZE, FG_COLOR)
 #define DRAW_BLOB(vec2) DrawPixelV((vec2), WHITE)
 
@@ -77,6 +82,14 @@ static int g_seed = 0;
 float randf(void)
 {
     return (float)rand()/(float)(RAND_MAX);;
+}
+
+float diff_timespec(
+    const struct timespec* t1,
+    const struct timespec* t0
+) {
+    float second = difftime(t1->tv_sec, t0->tv_sec);
+    return second + ((float)t1->tv_nsec - (float)t0->tv_nsec) / 1e9;
 }
 
 float xclamp(float x)
@@ -211,32 +224,40 @@ void print_pos(Vector2i pos[BLOB_COUNT])
 int main(void)
 {
     SetTraceLogLevel(LOG_WARNING);
-    SetTargetFPS(60);
+    // SetTargetFPS(60);
     InitWindow(WIN_WIDTH, WIN_HEIGHT, "Bob's Particle Game");
+
+    struct timespec time;
 
     RenderTexture2D tex0 = LoadRenderTexture(WIN_WIDTH, WIN_HEIGHT);
 
     SetTraceLogLevel(LOG_INFO);
 
-    Shader shader = LoadShader(0, "shader.glsl");
+    Shader disp = LoadShader(0, "shader.glsl");
+
+    // char *tcode = LoadFileText("vert.glsl");
+    // int tshader = rlCompileShader(tcode, RL_VERTEX_SHADER);
+    // int tprog = rlLoadShaderProgram(, )
 
     char *com_code = LoadFileText("compute.glsl");
     int com_shader = rlCompileShader(com_code, RL_COMPUTE_SHADER);
     int com_prog = rlLoadComputeShaderProgram(com_shader);
     UnloadFileText(com_code);
 
-    int resLoc = GetShaderLocation(shader, "iResolution");
-    float res[2] = {WIN_WIDTH, WIN_HEIGHT};
-    SetShaderValue(shader, resLoc, res, SHADER_UNIFORM_VEC2);
+    int com_res_loc = rlGetLocationUniform(com_prog, "iResolution");
+    int com_frame_loc = rlGetLocationUniform(com_prog, "iFrame");
+    int com_time_loc = rlGetLocationUniform(com_prog, "iTime");
 
-    int comResLoc = rlGetLocationUniform(com_shader, "iResolution");
-    int comFrameLoc = rlGetLocationUniform(com_shader, "iFrame");
+    int disp_res_loc = GetShaderLocation(disp, "iResolution");
+    int disp_tex0_loc = GetShaderLocation(disp, "texture0");
+    int disp_bpos_loc = GetShaderLocation(disp, "blobs_pos");
+    int disp_frame_loc = GetShaderLocation(disp, "iFrame");
+    int disp_time_loc = GetShaderLocation(disp, "iTime");
 
-    int tex0_loc = GetShaderLocation(shader, "texture0");
-    int blobs_pos_loc = GetShaderLocation(shader, "blobs_pos");
-
-    int frame_loc = GetShaderLocation(shader, "iFrame");
-    SetShaderValue(shader, 0, 0, SHADER_UNIFORM_INT);
+    const float res[2] = {WIN_WIDTH, WIN_HEIGHT};
+    SetShaderValue(disp, disp_res_loc, &res, SHADER_UNIFORM_VEC2);
+    SetShaderValue(disp, 0, 0, SHADER_UNIFORM_INT);
+    SetShaderValueTexture(disp, disp_tex0_loc, tex0.texture);
 
     uint32_t frame_count = 0;
     uint32_t update_blob_frame = 100;
@@ -246,7 +267,7 @@ int main(void)
 
     Vector2i blobs_pos[BLOB_COUNT] = {0};
     // Vector2 blobs_vel = {0};
-    // float blobs_rot[BLOB_COUNT] = {0};
+    float blobs_rot[BLOB_COUNT] = {0};
 
     g_seed = SEED;
 
@@ -265,6 +286,7 @@ int main(void)
     for (int i = 0; i < BLOB_COUNT; i++)
     {
         blobs_pos[i] = sim.blobs[i].pos;
+        blobs_rot[i] = sim.blobs[i].rot;
     }
 
     int ssbo_pos0 = rlLoadShaderBuffer(
@@ -281,14 +303,13 @@ int main(void)
         RL_DYNAMIC_COPY
     );
     
-    // int ssbo_rot1 = rlLoadShaderBuffer(
-    //     BLOB_COUNT * sizeof(float),
-    //     // NULL,
-    //     blobs_rot,
-    //     RL_DYNAMIC_COPY
-    // );
+    int ssbo_rot = rlLoadShaderBuffer(
+        BLOB_COUNT * sizeof(float),
+        // NULL,
+        blobs_rot,
+        RL_DYNAMIC_COPY
+    );
   
-    SetShaderValueTexture(shader, tex0_loc, tex0.texture);
     // SetShaderValueTexture(shader, tex1_loc, tex1.texture);
 
     // rlBindShaderBuffer(ssbo_pos0, 1);
@@ -297,54 +318,83 @@ int main(void)
     int ssbo_src = ssbo_pos1;
     int ssbo_dst = ssbo_pos0;
 
+    struct timespec time_org;
+    float time_diff;
+    clock_gettime(CLOCK_REALTIME, &time_org);
+    
     while (!WindowShouldClose())
     {
+        clock_gettime(CLOCK_REALTIME, &time);
+        time_diff = diff_timespec(&time, &time_org);
+        // unsigned int nsec = time.tv_nsec;
+
         rlBindShaderBuffer(ssbo_src, 1);
-        rlBindShaderBuffer(ssbo_dst, 2);
+        rlBindShaderBuffer(ssbo_rot, 2);
 
         SetShaderValue(
-            shader,
-            frame_loc,
+            disp,
+            disp_frame_loc,
             &frame_count,
             SHADER_UNIFORM_INT
         );
 
         rlEnableShader(com_prog);
             rlSetUniform(
-                comFrameLoc,
+                com_frame_loc,
                 &frame_count,
                 SHADER_UNIFORM_INT,
                 1
             );
 
-            rlSetUniform(comResLoc, res, SHADER_UNIFORM_VEC2, 1);
-            rlComputeShaderDispatch(BLOB_COUNT, 1, 1);
+            rlSetUniform(
+                com_res_loc,
+                &res,
+                SHADER_UNIFORM_VEC2,
+                1
+            );
+
+            rlSetUniform(
+                com_time_loc,
+                &time_diff,
+                SHADER_UNIFORM_FLOAT,
+                1
+            );
+
+            // rlComputeShaderDispatch(BLOB_COUNT, 1, 1);
+            rlComputeShaderDispatch(1, 1, 1);
         rlDisableShader();
 
+        SetShaderValue(
+            disp,
+            disp_time_loc,
+            &time_diff,
+            SHADER_UNIFORM_FLOAT
+        );
+        
         BeginTextureMode(tex0);
-            BeginShaderMode(shader);
+            BeginShaderMode(disp);
                 DrawTexture(tex0.texture, 0, 0, WHITE);
             EndShaderMode();
         EndTextureMode();
 
         BeginDrawing();
             ClearBackground(BLANK);
-
             DrawTexture(tex0.texture, 0, 0, WHITE);
-            
             DrawFPS(0, 0);
+
+            DrawText(TextFormat("%f", time_diff), 0, 20, 20, WHITE);
         EndDrawing();
 
-        ssbo_src ^= ssbo_dst;
-        ssbo_dst ^= ssbo_src;
-        ssbo_src ^= ssbo_dst;
+        // ssbo_src ^= ssbo_dst;
+        // ssbo_dst ^= ssbo_src;
+        // ssbo_src ^= ssbo_dst;
 
         frame_count++;
     }
 
     SetTraceLogLevel(LOG_WARNING);
     UnloadRenderTexture(tex0);
-    UnloadShader(shader);
+    UnloadShader(disp);
 
     rlUnloadShaderBuffer(ssbo_pos0);
     rlUnloadShaderBuffer(ssbo_pos1);

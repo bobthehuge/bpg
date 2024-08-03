@@ -4,7 +4,7 @@ CRELFLAGS = -std=c99 -Ofast -DNDEBUG
 # CBENCHFLAGS = -std=c99 -Ofast -DNDEBUG -g -pg
 # CVISFLAGS = -std=c99 -g -Wall -Wextra -lraylib
 LDFLAGS = 
-LDLIBS = -lm -lraylib -lGL
+LDLIBS = -lm -lraylib -lGL -lc -lrt
 
 SRC = *.c
 OBJ = $(SRC:.c=.o)
