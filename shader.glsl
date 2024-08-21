@@ -1,11 +1,13 @@
 #version 430
 
-// #define BLOB_COUNT 256
+#define BLOB_COUNT 256
+// #define BLOB_COUNT 4
 // #define EPS 0.000001f
 #define EPS 0.0005f
 // #define EPS 0.5f
-#define BLOB_COUNT 4
 #define ERASER_WEIGHT 0.005
+#define TWOPI 6.2831f
+#define PI 3.1416f
 
 #define UINT_MAX 0xFFFFFFFFu
 #define FLT_MAX 3.402823466e+38
@@ -18,7 +20,7 @@ precision highp float;
 
 layout(std430, binding = 1) readonly buffer blobsPosSrcLayout
 {
-    ivec2 src[BLOB_COUNT];
+    vec2 src[BLOB_COUNT];
 };
 
 // layout(std430, binding = 2) readonly buffer blobsPosDstLayout
@@ -26,8 +28,8 @@ layout(std430, binding = 1) readonly buffer blobsPosSrcLayout
 //     uvec2 dst[BLOB_COUNT];
 // };
 
-uniform uint iFrame;
-uniform vec2 iResolution;
+uniform int iFrame;
+uniform ivec2 iResolution;
 uniform float iTime;
 
 in vec2 fragTexCoord;
@@ -73,19 +75,17 @@ void main()
     if (src_col.xyz != vec3(0.0))
         src_col.xyz -= vec3(ERASER_WEIGHT);
 
-    bool even_frame = iFrame % 2u == 0;
-
     uint i;
     for (i = 0; i < BLOB_COUNT; i++)
     {
-        if (pos == src[i])
+        ivec2 bpos = ivec2(src[i]);
+
+        if (pos.x == bpos.x && pos.y == bpos.y)
         {
             src_col = vec4(1.0, 1.0, 1.0, 1.0);
             i = BLOB_COUNT;
         }
     }
 
-    // float r = randf(uvec3(pos, 4));
-    // src_col = vec4(vec3(r), 1.0);
     finalColor = src_col;
 }

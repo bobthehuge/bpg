@@ -45,8 +45,8 @@
 
 #define BLOB_SIZE 2
 // #define BLOB_COUNT 4096
-// #define BLOB_COUNT 256
-#define BLOB_COUNT 4
+#define BLOB_COUNT 256
+// #define BLOB_COUNT 4
 
 #define VEC2FMT "{ x:%f, y:%f }"
 #define VEC2IFMT "{ x:%d, y:%d }"
@@ -84,42 +84,6 @@ float randf(void)
     return (float)rand()/(float)(RAND_MAX);;
 }
 
-float diff_timespec(
-    const struct timespec* t1,
-    const struct timespec* t0
-) {
-    float second = difftime(t1->tv_sec, t0->tv_sec);
-    return second + ((float)t1->tv_nsec - (float)t0->tv_nsec) / 1e9;
-}
-
-float xclamp(float x)
-{
-    if (x > WIN_WIDTH)
-        return 0;
-
-    if (x < 0)
-        return WIN_WIDTH;
-
-    return x;
-}
-
-float yclamp(float y)
-{
-    if (y > WIN_HEIGHT)
-        return 0;
-
-    if (y < 0)
-        return WIN_HEIGHT;
-
-    return y;
-}
-
-// transform x from [-1; 1] to [0; 1]
-float normalize(float x)
-{
-    return (x + 1) / 2;
-}
-
 void log_infos(void)
 {
     TraceLog(LOG_INFO, "\tWindow size:\t%dx%d", WIN_WIDTH, WIN_HEIGHT);
@@ -127,15 +91,6 @@ void log_infos(void)
     TraceLog(LOG_INFO, "\tCell size:\t%d", SCALE);
     TraceLog(LOG_INFO, "\tTotal cell:\t%d", CELL_COUNT);
     TraceLog(LOG_INFO, "\tSeed:\t\t%d", g_seed);
-}
-
-Vector2 Vector2Rot(Vector2 x, Vector2 org, float angle)
-{
-    Vector2 res = Vector2Subtract(x, org);
-    res = Vector2Rotate(res, angle);
-    res = Vector2Add(res, org);
-
-    return res;
 }
 
 void sim_init_blobs(struct simulation *sim)
@@ -147,68 +102,6 @@ void sim_init_blobs(struct simulation *sim)
         sim->blobs[i].vel.x = VEL;
         sim->blobs[i].vel.y = VEL;
         sim->blobs[i].rot = randf();
-    }
-}
-
-void sim_update_blobs(struct simulation *sim)
-{
-    for (int i = 0; i < BLOB_COUNT; i++)
-    {
-        Blob *blob = &sim->blobs[i];
-        Vector2i *bpos = &blob->pos;
-        Vector2i *vel = &blob->vel;
-
-        float x = floor((float)bpos->x / SCALE) * SCALE_FACTOR;
-        float y = floor((float)bpos->y / SCALE) * SCALE_FACTOR;
-        float z = sim->zoff;
-
-        float a = perlin_fbm3d(OCTAVES, x, y, z) * PI;
-
-        // Cell *cell = &CELL_AT(sim, x, y);
-
-        // a * MAG -> [0; TWO_PI * MAG]
-        // rot -> [0; TWO_PI]
-        // float a = fmodf(cell->a * MAG, TWO_PI);
-        // blob->rot = fmodf(blob->rot + cell->a * MAG, PI);
-        blob->rot = fmodf(blob->rot + a * MAG, PI);
-
-        if (bpos->x >= WIN_WIDTH - 1 || bpos->x <= 0)
-        {
-            vel->x *= -1;
-        }
-
-        if (bpos->y >= WIN_HEIGHT - 1 || bpos->y <= 0)
-            vel->y *= -1;
-
-        float cosx = cosf(blob->rot);
-        float sinx = sinf(blob->rot);
-
-        cosx = isnan(cosx) ? 1 : cosx;
-        sinx = isnan(sinx) ? 0 : sinx;
-
-        float nx = bpos->x + cosx * vel->x;
-        float ny = bpos->y + sinx * vel->y;
-
-        // if (!isnan(nx))
-            bpos->x = (int)nx;
-
-        // if (!isnan(ny))
-            bpos->y = (int)ny;
-        // bpos->x = xclamp(nx);
-        // bpos->y = yclamp(ny);
-
-        sim->zoff += SMOOTHER_SCALE;
-    }
-}
-
-void sim_draw_blobs(struct simulation *sim)
-{
-    for (int i = 0; i < BLOB_COUNT; i++)
-    {
-        // DRAW_BLOB(sim->blobs[i].pos);
-        Vector2i *v = &sim->blobs[i].pos;
-        Vector2 fv = {v->x, v->y};
-        DRAW_BLOB(fv);
     }
 }
 
@@ -224,7 +117,7 @@ void print_pos(Vector2i pos[BLOB_COUNT])
 int main(void)
 {
     SetTraceLogLevel(LOG_WARNING);
-    SetTargetFPS(300);
+    SetTargetFPS(120);
     InitWindow(WIN_WIDTH, WIN_HEIGHT, "Bob's Particle Game");
 
     RenderTexture2D tex0 = LoadRenderTexture(WIN_WIDTH, WIN_HEIGHT);
@@ -232,10 +125,6 @@ int main(void)
     SetTraceLogLevel(LOG_INFO);
 
     Shader disp = LoadShader(0, "shader.glsl");
-
-    // char *tcode = LoadFileText("vert.glsl");
-    // int tshader = rlCompileShader(tcode, RL_VERTEX_SHADER);
-    // int tprog = rlLoadShaderProgram(, )
 
     char *com_code = LoadFileText("compute.glsl");
     int com_shader = rlCompileShader(com_code, RL_COMPUTE_SHADER);
@@ -252,9 +141,9 @@ int main(void)
     int disp_frame_loc = GetShaderLocation(disp, "iFrame");
     int disp_time_loc = GetShaderLocation(disp, "iTime");
 
-    const float res[2] = {WIN_WIDTH, WIN_HEIGHT};
-    SetShaderValue(disp, disp_res_loc, &res, SHADER_UNIFORM_VEC2);
-    SetShaderValue(disp, 0, 0, SHADER_UNIFORM_INT);
+    const int res[2] = {WIN_WIDTH, WIN_HEIGHT};
+    SetShaderValue(disp, disp_res_loc, &res, SHADER_UNIFORM_IVEC2);
+    // SetShaderValue(disp, 0, 0, SHADER_UNIFORM_INT);
     SetShaderValueTexture(disp, disp_tex0_loc, tex0.texture);
 
     uint32_t frame_count = 0;
@@ -263,9 +152,9 @@ int main(void)
 
     Blob blobs[BLOB_COUNT] = {0};
 
-    Vector2i blobs_pos[BLOB_COUNT] = {0};
+    Vector2 blobs_pos[BLOB_COUNT] = {0};
     // Vector2 blobs_vel = {0};
-    int blobs_rot[BLOB_COUNT] = {0};
+    float blobs_rot[BLOB_COUNT] = {0};
 
     g_seed = SEED;
 
@@ -283,56 +172,32 @@ int main(void)
 
     for (int i = 0; i < BLOB_COUNT; i++)
     {
-        blobs_pos[i] = sim.blobs[i].pos;
-        blobs_rot[i] = *(int *)&(sim.blobs[i].rot);
+        blobs_pos[i].x = sim.blobs[i].pos.x;
+        blobs_pos[i].y = sim.blobs[i].pos.y;
+        // blobs_rot[i] = *(int *)&(sim.blobs[i].rot);
+        blobs_rot[i] = sim.blobs[i].rot;
     }
 
-    int ssbo_pos0 = rlLoadShaderBuffer(
-        BLOB_COUNT * sizeof(Vector2i),
-        NULL,
-        // blobs_pos,
-        RL_DYNAMIC_COPY
-    );
-    
-    int ssbo_pos1 = rlLoadShaderBuffer(
-        BLOB_COUNT * sizeof(Vector2i),
+    int ssbo_pos = rlLoadShaderBuffer(
+        BLOB_COUNT * sizeof(Vector2),
         // NULL,
         blobs_pos,
         RL_DYNAMIC_COPY
     );
     
-    // int ssbo_rot0 = rlLoadShaderBuffer(
-    //     BLOB_COUNT * sizeof(unsigned int),
-    //     NULL,
-    //     // blobs_rot,
-    //     RL_DYNAMIC_COPY
-    // );
-
-    int ssbo_rot1 = rlLoadShaderBuffer(
-        BLOB_COUNT * sizeof(int),
+    int ssbo_rot = rlLoadShaderBuffer(
+        BLOB_COUNT * sizeof(float),
         // NULL,
         blobs_rot,
         RL_DYNAMIC_COPY
     );
   
-    // SetShaderValueTexture(shader, tex1_loc, tex1.texture);
-
-    // rlBindShaderBuffer(ssbo_pos0, 1);
-    // rlBindShaderBuffer(ssbo_pos1, 2);
-
-    int ssbo_src = ssbo_pos1;
-    int ssbo_dst = ssbo_pos0;
-
-    // struct timespec time_org;
-    // float time_diff;
-    // clock_gettime(CLOCK_REALTIME, &time_org);
-    
     while (!WindowShouldClose())
     {
         float elapsed = GetTime();
 
-        rlBindShaderBuffer(ssbo_src, 1);
-        rlBindShaderBuffer(ssbo_rot1, 2);
+        rlBindShaderBuffer(ssbo_pos, 1);
+        rlBindShaderBuffer(ssbo_rot, 2);
 
         SetShaderValue(
             disp,
@@ -352,7 +217,7 @@ int main(void)
             rlSetUniform(
                 com_res_loc,
                 &res,
-                SHADER_UNIFORM_VEC2,
+                SHADER_UNIFORM_IVEC2,
                 1
             );
 
@@ -363,8 +228,8 @@ int main(void)
                 1
             );
 
-            // rlComputeShaderDispatch(BLOB_COUNT, 1, 1);
-            rlComputeShaderDispatch(1, 1, 1);
+            rlComputeShaderDispatch(BLOB_COUNT, 1, 1);
+            // rlComputeShaderDispatch(1, 1, 1);
         rlDisableShader();
 
         SetShaderValue(
@@ -388,9 +253,6 @@ int main(void)
             DrawText(TextFormat("%f", elapsed), 0, 20, 20, WHITE);
         EndDrawing();
 
-        // ssbo_src ^= ssbo_dst;
-        // ssbo_dst ^= ssbo_src;
-        // ssbo_src ^= ssbo_dst;
         frame_count++;
     }
 
@@ -398,8 +260,8 @@ int main(void)
     UnloadRenderTexture(tex0);
     UnloadShader(disp);
     
-    rlUnloadShaderBuffer(ssbo_pos0);
-    rlUnloadShaderBuffer(ssbo_pos1);
+    rlUnloadShaderBuffer(ssbo_pos);
+    rlUnloadShaderBuffer(ssbo_rot);
     rlUnloadShaderProgram(com_prog);
 
     CloseWindow();
