@@ -1,13 +1,14 @@
-#version 440
+#version 460
 
 #define BLOB_COUNT 4096
 // #define BLOB_COUNT 256
 // #define BLOB_COUNT 4
-
 #define UINT_MAX 0xFFFFFFFFu
 #define TWOPI 6.2831f
 
-layout (local_size_x = 1024, local_size_y = 1, local_size_z = 1) in;
+#define LOCAL_SIZE 256
+
+layout (local_size_x = LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 layout(std430, binding = 1) buffer blobsPosLayout {
     vec2 src[BLOB_COUNT];
@@ -49,9 +50,13 @@ float randf(uint id)
 
 void main()
 {
+    uint i = gl_GlobalInvocationID.x;
+
+    if (i >= BLOB_COUNT)
+        return;
+    
     vec2 fRes = vec2(iResolution);
     
-    uint i = gl_GlobalInvocationID.x;
     float r = rots[i];
     float a = r * TWOPI;
     

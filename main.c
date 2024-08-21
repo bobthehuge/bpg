@@ -51,7 +51,7 @@
 #define VEC2FMT "{ x:%f, y:%f }"
 #define VEC2IFMT "{ x:%d, y:%d }"
 
-#define UNIFORM_DVEC2 (2*sizeof(double))
+#define LOCAL_SIZE 256
 
 // #define DRAW_BLOB(vec2) DrawCircleV((vec2), BLOB_SIZE, FG_COLOR)
 #define DRAW_BLOB(vec2) DrawPixelV((vec2), WHITE)
@@ -221,15 +221,45 @@ int main(void)
                 1
             );
 
-            rlComputeShaderDispatch(BLOB_COUNT / 1024, 1, 1);
-            // rlComputeShaderDispatch(1, 1, 1);
+            rlComputeShaderDispatch(BLOB_COUNT / LOCAL_SIZE, 1, 1);
         rlDisableShader();
 
-        BeginTextureMode(tex0);
+/////// BeginTextureMode(tex0) ////////////////////////////////////////////////
+
+        rlDrawRenderBatchActive();// Update and draw internal render batch
+
+        rlEnableFramebuffer(tex0.id);// Enable render target
+
+        // Set RLGL internal framebuffer size
+        rlSetFramebufferWidth(WIN_WIDTH);
+        rlSetFramebufferHeight(WIN_HEIGHT);
+
+        rlMatrixMode(RL_PROJECTION);    // Switch to projection matrix
+        rlLoadIdentity();               // Reset current matrix (projection)
+
+        // Set orthographic projection to current framebuffer size
+        // NOTE: Configured top-left corner as (0, 0)
+        rlOrtho(0, WIN_WIDTH, WIN_HEIGHT, 0, 0.0f, 1.0f);
+
+        rlMatrixMode(RL_MODELVIEW);     // Switch back to modelview matrix
+        rlLoadIdentity();               // Reset current matrix (modelview)
+
             BeginShaderMode(disp);
                 DrawTexture(tex0.texture, 0, 0, WHITE);
             EndShaderMode();
-        EndTextureMode();
+
+///////////////////////////////////////////////////////////////////////////////
+
+/////// EndTextureMode(tex0) //////////////////////////////////////////////////
+
+        rlDrawRenderBatchActive(); // Update and draw internal render batch
+
+        rlDisableFramebuffer(); // Disable render target (fbo)
+
+        rlMatrixMode(RL_MODELVIEW);     // Switch back to modelview matrix
+        rlLoadIdentity();               // Reset current matrix (modelview)
+
+///////////////////////////////////////////////////////////////////////////////
 
         BeginDrawing();
             ClearBackground(BLANK);
