@@ -1,21 +1,13 @@
-#version 430
+#version 440
 
-#define BLOB_COUNT 256
+#define BLOB_COUNT 4096
+// #define BLOB_COUNT 256
 // #define BLOB_COUNT 4
 
-#define EPS 0.000001f
-#define INT_MAX 0x7FFFFFFF
 #define UINT_MAX 0xFFFFFFFFu
-#define FLT_MAX 3.402823466e+38
-#define FLT_MIN 1.175494351e-38
-#define DBL_MAX 1.7976931348623158e+308
-#define DBL_MIN 2.2250738585072014e-308
-#define PI 3.1415f
 #define TWOPI 6.2831f
-#define OCTAVES 8
-#define STRENGH 1
 
-layout (local_size_x = BLOB_COUNT, local_size_y = 1, local_size_z = 1) in;
+layout (local_size_x = 1024, local_size_y = 1, local_size_z = 1) in;
 
 layout(std430, binding = 1) buffer blobsPosLayout {
     vec2 src[BLOB_COUNT];
@@ -55,37 +47,26 @@ float randf(uint id)
     return r;
 }
 
-float fmodf(float a, float b)
-{
-    return mod((mod(a, b) + b), b);
-}
-
 void main()
 {
-    vec2 iRes = vec2(iResolution);
     vec2 fRes = vec2(iResolution);
-
+    
     uint i = gl_GlobalInvocationID.x;
     float r = rots[i];
-    float a = fmodf(r * TWOPI, TWOPI);
+    float a = r * TWOPI;
     
-    float x = src[i].x;
-    float y = src[i].y;
+    vec2 vel = vec2(cos(a), sin(a));
+    vec2 pos = src[i] + vel;
 
-    float ca = cos(a);
-    float sa = sin(a);
-
-    x += ca;
-    y += sa;
-
-    if (x <= 0.0 || y <= 0.0 || x >= fRes.x - 1.0 || y >= fRes.y - 1.0 ||
-        x == src[i].x || y == src[i].y) {
-        x = min(iRes.x - 1, max(0, x));
-        y = min(iRes.y - 1, max(0, y));
+    if (pos.x <= 0.0 || pos.y <= 0.0 || 
+        pos.x >= fRes.x - 1.0 || pos.y >= fRes.y - 1.0 ||
+        pos.x == src[i].x || pos.y == src[i].y) 
+    {
+        pos.x = min(fRes.x - 1, max(0, pos.x));
+        pos.y = min(fRes.y - 1, max(0, pos.y));
 
         rots[i] = randf(i);
-        // rots[i] = 1.0 - r;
     }
 
-    src[i] = vec2(x, y);
+    src[i] = pos;
 }

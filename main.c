@@ -32,8 +32,8 @@
 #define SCALE_FACTOR 0.7
 #define SMOOTHER_SCALE SCALE_FACTOR / 10000
 
-#define WIN_WIDTH 1200
-#define WIN_HEIGHT 800
+#define WIN_WIDTH 1920
+#define WIN_HEIGHT 1080
 #define WIN_BOUNDS CLITERAL(Rectangle){0, 0, WIN_WIDTH, WIN_HEIGHT}
 
 #define ROW_COUNT (WIN_HEIGHT / SCALE)
@@ -44,8 +44,8 @@
 #define OCTAVES 4
 
 #define BLOB_SIZE 2
-// #define BLOB_COUNT 4096
-#define BLOB_COUNT 256
+#define BLOB_COUNT 4096
+// #define BLOB_COUNT 256
 // #define BLOB_COUNT 4
 
 #define VEC2FMT "{ x:%f, y:%f }"
@@ -117,8 +117,9 @@ void print_pos(Vector2i pos[BLOB_COUNT])
 int main(void)
 {
     SetTraceLogLevel(LOG_WARNING);
-    SetTargetFPS(120);
+    // SetTargetFPS(120);
     InitWindow(WIN_WIDTH, WIN_HEIGHT, "Bob's Particle Game");
+    ToggleFullscreen();
 
     RenderTexture2D tex0 = LoadRenderTexture(WIN_WIDTH, WIN_HEIGHT);
 
@@ -137,9 +138,8 @@ int main(void)
 
     int disp_res_loc = GetShaderLocation(disp, "iResolution");
     int disp_tex0_loc = GetShaderLocation(disp, "texture0");
-    int disp_bpos_loc = GetShaderLocation(disp, "blobs_pos");
-    int disp_frame_loc = GetShaderLocation(disp, "iFrame");
-    int disp_time_loc = GetShaderLocation(disp, "iTime");
+    // int disp_frame_loc = GetShaderLocation(disp, "iFrame");
+    // int disp_time_loc = GetShaderLocation(disp, "iTime");
 
     const int res[2] = {WIN_WIDTH, WIN_HEIGHT};
     SetShaderValue(disp, disp_res_loc, &res, SHADER_UNIFORM_IVEC2);
@@ -192,19 +192,12 @@ int main(void)
         RL_DYNAMIC_COPY
     );
   
+    rlBindShaderBuffer(ssbo_pos, 1);
+    rlBindShaderBuffer(ssbo_rot, 2);
+
     while (!WindowShouldClose())
     {
         float elapsed = GetTime();
-
-        rlBindShaderBuffer(ssbo_pos, 1);
-        rlBindShaderBuffer(ssbo_rot, 2);
-
-        SetShaderValue(
-            disp,
-            disp_frame_loc,
-            &frame_count,
-            SHADER_UNIFORM_INT
-        );
 
         rlEnableShader(com_prog);
             rlSetUniform(
@@ -228,17 +221,10 @@ int main(void)
                 1
             );
 
-            rlComputeShaderDispatch(BLOB_COUNT, 1, 1);
+            rlComputeShaderDispatch(BLOB_COUNT / 1024, 1, 1);
             // rlComputeShaderDispatch(1, 1, 1);
         rlDisableShader();
 
-        SetShaderValue(
-            disp,
-            disp_time_loc,
-            &elapsed,
-            SHADER_UNIFORM_FLOAT
-        );
-        
         BeginTextureMode(tex0);
             BeginShaderMode(disp);
                 DrawTexture(tex0.texture, 0, 0, WHITE);
@@ -250,7 +236,7 @@ int main(void)
             DrawTexture(tex0.texture, 0, 0, WHITE);
             DrawFPS(0, 0);
 
-            DrawText(TextFormat("%f", elapsed), 0, 20, 20, WHITE);
+            // DrawText(TextFormat("%f", elapsed), 0, 20, 20, WHITE);
         EndDrawing();
 
         frame_count++;
