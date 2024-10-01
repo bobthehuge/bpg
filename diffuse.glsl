@@ -2,7 +2,7 @@
 
 // #define LOCAL_SIZE 256
 
-layout (local_size_x = 16, local_size_y = 16) in;
+layout (local_size_x = 32) in;
 
 layout(binding = 3, rgba8) uniform image2D iTex;
 
@@ -10,7 +10,10 @@ uniform ivec2 iResolution;
 
 void main()
 {
-    uvec2 id = gl_GlobalInvocationID.xy;
+    uvec2 id = uvec2(
+        gl_GlobalInvocationID.x % iResolution.x, 
+        gl_GlobalInvocationID.x / iResolution.x
+    );
 
     if (id.x >= iResolution.x || id.y >= iResolution.y)
         return;
@@ -36,4 +39,6 @@ void main()
     vec4 final_dif = max(vec4(0), dif - 0.005);
     
     imageStore(iTex, ivec2(id), final_dif);
+    // pos = x * width + y
+    // vec = pos % width
 }

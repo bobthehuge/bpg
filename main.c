@@ -31,9 +31,8 @@
 #define WIN_RECT CLITERAL(Rectangle){0,0,WIN_WIDTH,WIN_HEIGHT}
 // #define WIN_CENTER CLITERAL(Vector2){TEX_WIDTH/2.0, TEX_HEIGHT/2.0}
 
-#define BLOB_SIZE 2
-// #define BLOB_COUNT 1000000
-#define BLOB_COUNT 16384
+#define BLOB_COUNT 1000000
+// #define BLOB_COUNT 100000
 // #define BLOB_COUNT 4096
 // #define BLOB_COUNT 2048
 // #define BLOB_COUNT 256
@@ -44,6 +43,9 @@
 
 #define LOCAL_SIZE 256
 #define RGBA8 RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+
+#define MENU_SHOW 0b00000001
+#define MENU_LOCK 0b00000010
 
 static int g_seed = 0;
 
@@ -58,6 +60,166 @@ void log_infos(void)
     TraceLog(LOG_INFO, "\tTexture size:\t%dx%d", TEX_WIDTH, TEX_HEIGHT);
     TraceLog(LOG_INFO, "\tTotal cell:\t%d", BLOB_COUNT);
     TraceLog(LOG_INFO, "\tSeed:\t\t%d", g_seed);
+}
+
+#define PARAM_COUNT 5
+struct GUI
+{
+    char state;
+    uint32_t selected;
+    uint32_t target_fps;
+    float rotation_speed;
+    uint32_t sensor_size;
+    uint32_t sense_angle;
+    float angle_offset;
+};
+
+static struct GUI menu = {
+    .state = 0,
+    .selected = 0,
+    .target_fps = 300,
+    .rotation_speed = 0.8,
+    .sensor_size = 2,
+    .sense_angle = 40,
+    .angle_offset = 20,
+};
+
+void draw_menu(void)
+{
+    if ((menu.state & (MENU_SHOW | MENU_LOCK)) == 0 )
+        return;
+
+    DrawRectangle(0, 0, 300, WIN_HEIGHT, (Color){ 0, 0, 0, 180 });
+
+    DrawText(TextFormat("%d FPS", GetFPS()), 10, 0, 20, GREEN);
+
+    if (menu.selected > 0)
+        DrawCircle(5, 25 + 20 * menu.selected - 10, 3, RED);
+
+    DrawText(
+        TextFormat("targeted FPS: %d", menu.target_fps), 10, 25, 20, GREEN
+    );
+    DrawText(
+        TextFormat("rotation speed: %f", menu.rotation_speed),
+        10,
+        45,
+        20,
+        GREEN
+    );
+    DrawText(
+        TextFormat("sensor size: %d", menu.sensor_size),
+        10,
+        65,
+        20,
+        GREEN
+    );
+    DrawText(
+        TextFormat("sense angle: %d deg", menu.sense_angle),
+        10,
+        85,
+        20,
+        GREEN
+    );
+    DrawText(
+        TextFormat("angle offset: %f", menu.angle_offset),
+        10,
+        105,
+        20,
+        GREEN
+    );
+}
+
+void menu_incr_param(void)
+{
+    switch (menu.selected)
+    {
+    case 1:
+        if (menu.target_fps < 3600)
+        {
+            menu.target_fps += 60;
+            SetTargetFPS(menu.target_fps);
+        }
+        break;
+    case 2:
+        if (menu.rotation_speed)
+            menu.rotation_speed += 0.1;
+        break;
+    case 3:
+        if (menu.sensor_size < 20)
+            menu.sensor_size++;
+        break;
+    case 4:
+        if (menu.sense_angle < 180)
+            menu.sense_angle += 10;
+        break;
+    case 5:
+        if (menu.angle_offset < 50)
+            menu.angle_offset += 1;
+        break;
+    default:
+        break;
+    }
+}
+
+void menu_decr_param(void)
+{
+    switch (menu.selected)
+    {
+    case 1:
+        if (menu.target_fps > 60)
+        {
+            menu.target_fps -= 60;
+            SetTargetFPS(menu.target_fps);
+        }
+        break;
+    case 2:
+        if (menu.rotation_speed > 0)
+            menu.rotation_speed -= 0.1;
+        break;
+    case 3:
+        if (menu.sensor_size > 1)
+            menu.sensor_size--;
+        break;
+    case 4:
+        if (menu.sense_angle > 0)
+            menu.sense_angle -= 10;
+        break;
+    case 5:
+        if (menu.angle_offset > -50)
+            menu.angle_offset -= 1;
+        break;
+    default:
+        break;
+    }
+}
+
+void menu_reset_params(void)
+{
+    menu.target_fps = 300;
+    menu.rotation_speed = 0.5;
+    menu.sensor_size = 3;
+}
+
+void menu_controls(void)
+{
+    if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_R))
+    {
+        menu_reset_params();
+        return;
+    }
+
+    if ((menu.state & (MENU_SHOW | MENU_LOCK)) != MENU_SHOW)
+        return;
+
+    if (IsKeyPressed(KEY_UP) && menu.selected > 0)
+        menu.selected--;
+    if (IsKeyPressed(KEY_DOWN) && menu.selected < PARAM_COUNT)
+        menu.selected++;
+
+    if (IsKeyPressed(KEY_RIGHT))
+        menu_incr_param();
+    if (IsKeyPressed(KEY_LEFT))
+        menu_decr_param();
 }
 
 int main(void)
@@ -82,9 +244,11 @@ int main(void)
     UnloadFileText(dif_code);
 
     int com_res_loc = rlGetLocationUniform(com_prog, "iResolution");
-    int com_frame_loc = rlGetLocationUniform(com_prog, "iFrame");
     int com_time_loc = rlGetLocationUniform(com_prog, "iTime");
-    int com_tex_loc = rlGetLocationUniform(com_prog, "iTex");
+    int com_speed_loc = rlGetLocationUniform(com_prog, "iRotSpeed");
+    int com_size_loc = rlGetLocationUniform(com_prog, "iSensorSize");
+    int com_angle_loc = rlGetLocationUniform(com_prog, "iSenseAngle");
+    int com_dstoff_loc = rlGetLocationUniform(com_prog, "iDstOffset");
 
     int dif_res_loc = rlGetLocationUniform(dif_prog, "iResolution");
 
@@ -106,7 +270,7 @@ int main(void)
     {
         blobs_pos[i].x = randf() * TEX_WIDTH;
         blobs_pos[i].y = randf() * TEX_HEIGHT;
-        blobs_rot[i] = randf();
+        blobs_rot[i] = randf() * 2 * PI;
     }
 
     int ssbo_pos = rlLoadShaderBuffer(
@@ -130,24 +294,18 @@ int main(void)
     rlBindShaderBuffer(ssbo_rot, 2);
     rlBindImageTexture(texture.id, 3, RGBA8, false);
 
-    uint32_t frame_count = 0;
-    uint32_t fps = 300;
-    SetTargetFPS(fps);
+    SetTargetFPS(menu.target_fps);
 
     while (!WindowShouldClose())
     {
         float elapsed = GetTime();
+        
+        if (IsKeyPressed(KEY_F2) && (menu.state & MENU_LOCK) == 0)
+        {
+            menu.state ^= MENU_SHOW;
+        }
 
-        if (IsKeyPressed(KEY_UP) && fps < 1800)
-        {
-            fps += 60;
-            SetTargetFPS(fps);
-        }
-        if (IsKeyPressed(KEY_DOWN) && fps > 0)
-        {
-            fps -= 60;
-            SetTargetFPS(fps);
-        }
+        menu_controls();
 
         rlEnableShader(dif_prog);
             rlSetUniform(
@@ -158,24 +316,24 @@ int main(void)
             );
 
             rlComputeShaderDispatch(
-                TEX_WIDTH / 16,
-                TEX_HEIGHT / 16, 
+                TEX_WIDTH * TEX_HEIGHT / 32,
+                1,
                 1
             );
         rlDisableShader();
         
         rlEnableShader(com_prog);
             rlSetUniform(
-                com_frame_loc,
-                &frame_count,
-                SHADER_UNIFORM_INT,
+                com_res_loc,
+                &res,
+                SHADER_UNIFORM_IVEC2,
                 1
             );
 
             rlSetUniform(
-                com_res_loc,
-                &res,
-                SHADER_UNIFORM_IVEC2,
+                com_speed_loc,
+                &menu.rotation_speed,
+                SHADER_UNIFORM_FLOAT,
                 1
             );
 
@@ -186,11 +344,33 @@ int main(void)
                 1
             );
 
-            rlComputeShaderDispatch(BLOB_COUNT / LOCAL_SIZE, 1, 1);
+            rlSetUniform(
+                com_size_loc,
+                &menu.sensor_size,
+                SHADER_UNIFORM_INT,
+                1
+            );
+
+            float angle = (float)menu.sense_angle * PI / 180;
+            rlSetUniform(
+                com_angle_loc,
+                &angle,
+                SHADER_UNIFORM_FLOAT,
+                1
+            );
+
+            rlSetUniform(
+                com_dstoff_loc,
+                &menu.angle_offset,
+                SHADER_UNIFORM_FLOAT,
+                1
+            );
+
+            rlComputeShaderDispatch(BLOB_COUNT / 32, 1, 1);
         rlDisableShader();
 
         BeginDrawing();
-            ClearBackground(BLANK);
+            ClearBackground(BLACK);
                 DrawTexturePro(
                     texture,
                     TEX_RECT,
@@ -199,10 +379,8 @@ int main(void)
                     0,
                     WHITE
                 );
-            DrawFPS(0, 0);
+            draw_menu();
         EndDrawing();
-
-        frame_count++;
     }
 
     SetTraceLogLevel(LOG_WARNING);
