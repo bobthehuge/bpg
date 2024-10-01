@@ -1,7 +1,9 @@
 # Bob's Particle Game
 
 ## Credits
-* Coding Train's video on flowfields: 
+* Sebastian Lague's video on slime simulation: 
 https://www.youtube.com/watch?v=BjoM9oKOAKY
-* Simplex original implementation (bth_simplex.h):
-https://github.com/SRombauts/SimplexNoise/
+* original repo:
+https://github.com/SebLague/Slime-Simulation/
+* raylib repo:
+https://github.com/raysan5/raylib
