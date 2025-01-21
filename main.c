@@ -1,3 +1,4 @@
+#include <math.h>
 #define _POSIX_C_SOURCE 199309L
 
 #include <raylib.h>
@@ -5,6 +6,7 @@
 #include <rlgl.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -28,11 +30,12 @@
 // #define TEX_HEIGHT WIN_HEIGHT
 
 #define TEX_RECT CLITERAL(Rectangle){0,0,TEX_WIDTH,TEX_HEIGHT}
+#define TEX_CENTER CLITERAL(Vector2){TEX_WIDTH/2.0,TEX_HEIGHT/2.0}
 #define WIN_RECT CLITERAL(Rectangle){0,0,WIN_WIDTH,WIN_HEIGHT}
 // #define WIN_CENTER CLITERAL(Vector2){TEX_WIDTH/2.0, TEX_HEIGHT/2.0}
 
-#define BLOB_COUNT 1000000
-// #define BLOB_COUNT 100000
+// #define BLOB_COUNT 1000000
+#define BLOB_COUNT 100000
 // #define BLOB_COUNT 4096
 // #define BLOB_COUNT 2048
 // #define BLOB_COUNT 256
@@ -40,6 +43,8 @@
 
 #define VEC2FMT "{ x:%f, y:%f }"
 #define VEC2IFMT "{ x:%d, y:%d }"
+// #define SPAWN_RADIUS TEX_HEIGHT/2
+#define SPAWN_RADIUS 300
 
 #define LOCAL_SIZE 256
 #define RGBA8 RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
@@ -62,164 +67,216 @@ void log_infos(void)
     TraceLog(LOG_INFO, "\tSeed:\t\t%d", g_seed);
 }
 
-#define PARAM_COUNT 5
-struct GUI
+#define PARAM_COUNT 7
+struct settings
 {
     char state;
+    float cooldown;
     uint32_t selected;
     uint32_t target_fps;
     float rotation_speed;
     uint32_t sensor_size;
     uint32_t sense_angle;
     float angle_offset;
+    float decay_rate;
+    uint32_t density_threshold;
 };
 
-static struct GUI menu = {
+static struct settings settings = {
     .state = 0,
+    .cooldown = 0,
     .selected = 0,
-    .target_fps = 300,
-    .rotation_speed = 0.8,
+    .target_fps = 1080,
+    .rotation_speed = 0.1,
     .sensor_size = 2,
-    .sense_angle = 40,
+    .sense_angle = 20,
     .angle_offset = 20,
+    .decay_rate = 0.050,
+    .density_threshold = 10,
 };
 
-void draw_menu(void)
+void draw_settings(void)
 {
-    if ((menu.state & (MENU_SHOW | MENU_LOCK)) == 0 )
+    if ((settings.state & (MENU_SHOW | MENU_LOCK)) == 0 )
         return;
 
     DrawRectangle(0, 0, 300, WIN_HEIGHT, (Color){ 0, 0, 0, 180 });
 
     DrawText(TextFormat("%d FPS", GetFPS()), 10, 0, 20, GREEN);
 
-    if (menu.selected > 0)
-        DrawCircle(5, 25 + 20 * menu.selected - 10, 3, RED);
+    if (settings.selected > 0)
+        DrawCircle(5, 25 + 20 * settings.selected - 10, 3, RED);
 
     DrawText(
-        TextFormat("targeted FPS: %d", menu.target_fps), 10, 25, 20, GREEN
+        TextFormat("targeted FPS: %d", settings.target_fps), 10, 25, 20, GREEN
     );
     DrawText(
-        TextFormat("rotation speed: %f", menu.rotation_speed),
+        TextFormat("rotation speed: %f", settings.rotation_speed),
         10,
         45,
         20,
         GREEN
     );
     DrawText(
-        TextFormat("sensor size: %d", menu.sensor_size),
+        TextFormat("sensor size: %d", settings.sensor_size),
         10,
         65,
         20,
         GREEN
     );
     DrawText(
-        TextFormat("sense angle: %d deg", menu.sense_angle),
+        TextFormat("sense angle: %d deg", settings.sense_angle),
         10,
         85,
         20,
         GREEN
     );
     DrawText(
-        TextFormat("angle offset: %f", menu.angle_offset),
+        TextFormat("angle offset: %f", settings.angle_offset),
         10,
         105,
         20,
         GREEN
     );
+    DrawText(
+        TextFormat("decay rate: %f", settings.decay_rate),
+        10,
+        125,
+        20,
+        GREEN
+    );
+    DrawText(
+        TextFormat("max density: %u", settings.density_threshold),
+        10,
+        145,
+        20,
+        GREEN
+    );
 }
 
-void menu_incr_param(void)
+void settings_incr_param(void)
 {
-    switch (menu.selected)
+    switch (settings.selected)
     {
     case 1:
-        if (menu.target_fps < 3600)
+        if (settings.target_fps < 3600)
         {
-            menu.target_fps += 60;
-            SetTargetFPS(menu.target_fps);
+            settings.target_fps += 60;
+            SetTargetFPS(settings.target_fps);
         }
         break;
     case 2:
-        if (menu.rotation_speed)
-            menu.rotation_speed += 0.1;
+        if (settings.rotation_speed)
+            settings.rotation_speed += 0.001;
         break;
     case 3:
-        if (menu.sensor_size < 20)
-            menu.sensor_size++;
+        if (settings.sensor_size < 20)
+            settings.sensor_size++;
         break;
     case 4:
-        if (menu.sense_angle < 180)
-            menu.sense_angle += 10;
+        if (settings.sense_angle < 180)
+            settings.sense_angle += 1;
         break;
     case 5:
-        if (menu.angle_offset < 50)
-            menu.angle_offset += 1;
+        if (settings.angle_offset < 60)
+            settings.angle_offset += 1;
+        break;
+    case 6:
+        if (settings.decay_rate < 1.0)
+            settings.decay_rate += 0.001;
+        break;
+    case 7:
+        if (settings.density_threshold < UINT32_MAX)
+            settings.density_threshold += 1;
         break;
     default:
         break;
     }
 }
 
-void menu_decr_param(void)
+void settings_decr_param(void)
 {
-    switch (menu.selected)
+    switch (settings.selected)
     {
     case 1:
-        if (menu.target_fps > 60)
+        if (settings.target_fps > 60)
         {
-            menu.target_fps -= 60;
-            SetTargetFPS(menu.target_fps);
+            settings.target_fps -= 60;
+            SetTargetFPS(settings.target_fps);
         }
         break;
     case 2:
-        if (menu.rotation_speed > 0)
-            menu.rotation_speed -= 0.1;
+        if (settings.rotation_speed > 0)
+            settings.rotation_speed -= 0.001;
         break;
     case 3:
-        if (menu.sensor_size > 1)
-            menu.sensor_size--;
+        if (settings.sensor_size > 1)
+            settings.sensor_size--;
         break;
     case 4:
-        if (menu.sense_angle > 0)
-            menu.sense_angle -= 10;
+        if (settings.sense_angle > 0)
+            settings.sense_angle -= 1;
         break;
     case 5:
-        if (menu.angle_offset > -50)
-            menu.angle_offset -= 1;
+        if (settings.angle_offset > -60)
+            settings.angle_offset -= 1;
+        break;
+    case 6:
+        if (settings.decay_rate > 0.0)
+            settings.decay_rate -= 0.001;
+        break;
+    case 7:
+        if (settings.density_threshold > 0)
+            settings.density_threshold -= 1;
         break;
     default:
         break;
     }
 }
 
-void menu_reset_params(void)
+void settings_reset_params(void)
 {
-    menu.target_fps = 300;
-    menu.rotation_speed = 0.5;
-    menu.sensor_size = 3;
+    settings.target_fps = 1080;
+    settings.rotation_speed = 0.1;
+    settings.sensor_size = 2;
+    settings.sense_angle = 20;
+    settings.angle_offset = 20;
+    settings.decay_rate = 0.005;
+    settings.density_threshold = 20;
 }
 
-void menu_controls(void)
+void settings_controls(void)
 {
     if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_R))
     {
-        menu_reset_params();
+        settings_reset_params();
         return;
     }
 
-    if ((menu.state & (MENU_SHOW | MENU_LOCK)) != MENU_SHOW)
+    if ((settings.state & (MENU_SHOW | MENU_LOCK)) != MENU_SHOW)
         return;
 
-    if (IsKeyPressed(KEY_UP) && menu.selected > 0)
-        menu.selected--;
-    if (IsKeyPressed(KEY_DOWN) && menu.selected < PARAM_COUNT)
-        menu.selected++;
+    if (IsKeyPressed(KEY_UP) && settings.selected > 1)
+        settings.selected--;
+    if (IsKeyPressed(KEY_DOWN) && settings.selected < PARAM_COUNT)
+        settings.selected++;
 
-    if (IsKeyPressed(KEY_RIGHT))
-        menu_incr_param();
-    if (IsKeyPressed(KEY_LEFT))
-        menu_decr_param();
+    if (IsKeyDown(KEY_LEFT_ALT) && settings.cooldown > 0.1)
+    {
+        settings.cooldown = 0;
+
+        if (IsKeyDown(KEY_RIGHT))
+            settings_incr_param();
+        if (IsKeyDown(KEY_LEFT))
+            settings_decr_param();
+    } 
+    else
+    {
+        if (IsKeyPressed(KEY_RIGHT))
+            settings_incr_param();
+        if (IsKeyPressed(KEY_LEFT))
+            settings_decr_param();
+    }
 }
 
 int main(void)
@@ -249,8 +306,10 @@ int main(void)
     int com_size_loc = rlGetLocationUniform(com_prog, "iSensorSize");
     int com_angle_loc = rlGetLocationUniform(com_prog, "iSenseAngle");
     int com_dstoff_loc = rlGetLocationUniform(com_prog, "iDstOffset");
+    int com_thresh_loc = rlGetLocationUniform(com_prog, "iDensityThreshold");
 
     int dif_res_loc = rlGetLocationUniform(dif_prog, "iResolution");
+    int dif_dec_loc = rlGetLocationUniform(dif_prog, "iDecay");
 
     const int res[2] = {TEX_WIDTH, TEX_HEIGHT};
 
@@ -258,18 +317,45 @@ int main(void)
     // Vector2 blobs_vel = {0};
     float *blobs_rot = malloc(BLOB_COUNT * sizeof(float));
 
-    g_seed = SEED;
+    // struct timespec t;
+    // clock_gettime(CLOCK_REALTIME, &t);
+    struct timeval d;
+    gettimeofday(&d, NULL);
 
+    g_seed = d.tv_sec * 100 + d.tv_usec / 100;
     srand(g_seed);
 
     SetTraceLogLevel(LOG_INFO);
     log_infos();
     SetTraceLogLevel(LOG_WARNING);
 
+    // TraceLog(LOG_WARNING, "%f", randf());
+    // TraceLog(LOG_WARNING, "%f", randf());
+    // TraceLog(LOG_WARNING, "%f", randf());
+
+    // t = vec2(randf(), randf());
+    // n = norm(t);
+    // t = t * (min(n, radius) / n);
+
     for (int i = 0; i < BLOB_COUNT; i++)
     {
-        blobs_pos[i].x = randf() * TEX_WIDTH;
-        blobs_pos[i].y = randf() * TEX_HEIGHT;
+        // Vector2 pos = {
+        //     randf() * TEX_WIDTH,
+        //     randf() * TEX_HEIGHT,
+        // };
+        float theta = randf() * 2 * PI;
+        float r = sqrtf(randf());
+        Vector2 pos = {
+            r * cos(theta) * (float)SPAWN_RADIUS + TEX_WIDTH/2.0,
+            r * sin(theta) * (float)SPAWN_RADIUS + TEX_HEIGHT/2.0,
+        };
+
+        blobs_pos[i] = pos;
+
+        // blobs_rot[i] = randf() * 2 * PI;
+        Vector2 org = Vector2Normalize(Vector2Subtract(TEX_CENTER, pos));
+
+        // blobs_rot[i] = atan2f(org.y, org.x);
         blobs_rot[i] = randf() * 2 * PI;
     }
 
@@ -294,24 +380,31 @@ int main(void)
     rlBindShaderBuffer(ssbo_rot, 2);
     rlBindImageTexture(texture.id, 3, RGBA8, false);
 
-    SetTargetFPS(menu.target_fps);
+    SetTargetFPS(settings.target_fps);
 
     while (!WindowShouldClose())
     {
         float elapsed = GetTime();
         
-        if (IsKeyPressed(KEY_F2) && (menu.state & MENU_LOCK) == 0)
+        if (IsKeyPressed(KEY_F2) && (settings.state & MENU_LOCK) == 0)
         {
-            menu.state ^= MENU_SHOW;
+            settings.state ^= MENU_SHOW;
         }
 
-        menu_controls();
+        settings_controls();
 
         rlEnableShader(dif_prog);
             rlSetUniform(
                 dif_res_loc,
                 &res,
                 SHADER_UNIFORM_IVEC2,
+                1
+            );
+
+            rlSetUniform(
+                dif_dec_loc,
+                &settings.decay_rate,
+                SHADER_UNIFORM_FLOAT,
                 1
             );
 
@@ -332,7 +425,7 @@ int main(void)
 
             rlSetUniform(
                 com_speed_loc,
-                &menu.rotation_speed,
+                &settings.rotation_speed,
                 SHADER_UNIFORM_FLOAT,
                 1
             );
@@ -346,12 +439,12 @@ int main(void)
 
             rlSetUniform(
                 com_size_loc,
-                &menu.sensor_size,
+                &settings.sensor_size,
                 SHADER_UNIFORM_INT,
                 1
             );
 
-            float angle = (float)menu.sense_angle * PI / 180;
+            float angle = ((float)settings.sense_angle * PI) / 180;
             rlSetUniform(
                 com_angle_loc,
                 &angle,
@@ -361,8 +454,15 @@ int main(void)
 
             rlSetUniform(
                 com_dstoff_loc,
-                &menu.angle_offset,
+                &settings.angle_offset,
                 SHADER_UNIFORM_FLOAT,
+                1
+            );
+
+            rlSetUniform(
+                com_thresh_loc,
+                &settings.density_threshold,
+                SHADER_UNIFORM_INT,
                 1
             );
 
@@ -379,8 +479,9 @@ int main(void)
                     0,
                     WHITE
                 );
-            draw_menu();
+            draw_settings();
         EndDrawing();
+        settings.cooldown += 1.0 / GetFPS();
     }
 
     SetTraceLogLevel(LOG_WARNING);

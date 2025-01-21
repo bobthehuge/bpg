@@ -1,16 +1,13 @@
 #version 430
 
-#define BLOB_COUNT 1000000
-// #define BLOB_COUNT 100000
+// #define BLOB_COUNT 1000000
+#define BLOB_COUNT 100000
 // #define BLOB_COUNT 4096
 // #define BLOB_COUNT 2048
 // #define BLOB_COUNT 256
 // #define BLOB_COUNT 4
-#define UINT_MAX 0xF5F5F5FFu
+
 #define PI 3.1415f
-#define TWOPI 6.2831f
-// #define SENSOR_SIZE 3
-// #define TURN_SPEED 0.5 * TWOPI
 
 layout (local_size_x = 32) in;
 
@@ -33,6 +30,7 @@ uniform float iRotSpeed;
 uniform int iSensorSize;
 uniform float iSenseAngle;
 uniform float iDstOffset;
+uniform int iDensityThreshold;
 
 uint hash(uint state)
 {
@@ -50,7 +48,7 @@ float randf(uvec3 p)
     return float(hash(
         uint(p.y) * iResolution.x + uint(p.x) + 
         hash(int(float(p.z) + iTime * 100000.0))
-    )) / float(UINT_MAX);
+    )) / 4294967295.0;
 }
 
 float randf(uint id) 
@@ -105,28 +103,29 @@ void main()
     if (wf <= wl || wf <= wr)
     {
         if (wf < wl && wf < wr)
-            a += (rand * 2 * PI - 0.5) * 2 * iRotSpeed;
+            a += ((rand - 0.5) * 2.0) * iRotSpeed * PI;
         else if (wr > wl)
-            a -= rand * iRotSpeed * 2 * PI;
+            a -= rand * iRotSpeed * PI;
         else if (wl > wr)
-            a += rand * iRotSpeed * 2 * PI;
+            a += rand * iRotSpeed * PI;
     }
+
+    if (wf > iDensityThreshold)
+        a += PI + ((rand - 0.5) * 2.0) * iSenseAngle;
     
-    vec2 vel = vec2(cos(a), sin(a));
-    vec2 pos = src[i] + vel;
+    vec2 vel = vec2(cos(a), sin(a)) * 1.0;
+    vec2 pos = src[i];
+    vec2 npos = pos + vel;
 
-    if (pos.x < 0.0 || pos.y < 0.0 || 
-        pos.x >= fRes.x || pos.y >= fRes.y ||
-        pos.x == src[i].x || pos.y == src[i].y) 
-    {
-        pos.x = min(fRes.x - 1, max(0, pos.x));
-        pos.y = min(fRes.y - 1, max(0, pos.y));
+    a = (npos.x < 0 || npos.y < 0 || npos.x >= fRes.x || npos.y >= fRes.y)
+        ? rand * 2 * PI : a;
 
-        a = rand * TWOPI;
-    }
+    npos.x = min(fRes.x, max(0, npos.x));
+    npos.y = min(fRes.y, max(0, npos.y));
 
-    src[i] = pos;
-    rots[i] = mod(a, TWOPI);
+    imageStore(iTex, ivec2(npos), vec4(1.0, 1.0, 1.0, 1.0));
 
-    imageStore(iTex, ivec2(pos), vec4(1.0, 1.0, 1.0, 1.0));
+    src[i] = npos;
+    rots[i] = abs(mod(a, 2 * PI));
+    // rots[i] = a;
 }

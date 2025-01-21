@@ -7,6 +7,7 @@ layout (local_size_x = 32) in;
 layout(binding = 3, rgba8) uniform image2D iTex;
 
 uniform ivec2 iResolution;
+uniform float iDecay;
 
 void main()
 {
@@ -36,9 +37,10 @@ void main()
     }
 
     vec4 dif = mix(col, sum / 9.0, 1.0); //lerp
-    vec4 final_dif = max(vec4(0), dif - 0.005);
+    vec4 final_dif = vec4(0.0, 0.0, 0.0, 1.0);
+
+    if (sum.r > 0)
+        final_dif = max(final_dif, dif - iDecay);
     
     imageStore(iTex, ivec2(id), final_dif);
-    // pos = x * width + y
-    // vec = pos % width
 }
