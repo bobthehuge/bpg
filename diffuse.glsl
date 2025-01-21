@@ -1,8 +1,9 @@
 #version 430
+#define WAVES 64
 
 // #define LOCAL_SIZE 256
 
-layout (local_size_x = 32) in;
+layout (local_size_x = WAVES) in;
 
 layout(binding = 3, rgba8) uniform image2D iTex;
 
@@ -15,9 +16,6 @@ void main()
         gl_GlobalInvocationID.x % iResolution.x, 
         gl_GlobalInvocationID.x / iResolution.x
     );
-
-    if (id.x >= iResolution.x || id.y >= iResolution.y)
-        return;
 
     vec4 col = imageLoad(iTex, ivec2(id));
     vec4 sum = vec4(0.0);
@@ -39,8 +37,7 @@ void main()
     vec4 dif = mix(col, sum / 9.0, 1.0); //lerp
     vec4 final_dif = vec4(0.0, 0.0, 0.0, 1.0);
 
-    if (sum.r > 0)
-        final_dif = max(final_dif, dif - iDecay);
+    final_dif = max(final_dif, dif - iDecay);
     
     imageStore(iTex, ivec2(id), final_dif);
 }

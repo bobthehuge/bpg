@@ -1,15 +1,16 @@
 #version 430
+#define WAVES 64
 
 // #define BLOB_COUNT 1000000
-#define BLOB_COUNT 100000
-// #define BLOB_COUNT 4096
+// #define BLOB_COUNT 100000
+#define BLOB_COUNT 32768
 // #define BLOB_COUNT 2048
 // #define BLOB_COUNT 256
 // #define BLOB_COUNT 4
 
 #define PI 3.1415f
 
-layout (local_size_x = 32) in;
+layout (local_size_x = WAVES) in;
 
 layout(std430, binding = 1) buffer blobsPosLayout {
     vec2 src[BLOB_COUNT];
@@ -100,20 +101,12 @@ void main()
     // right
     float wr = sense(i, -iSenseAngle);
 
-    if (wf <= wl || wf <= wr)
-    {
-        if (wf < wl && wf < wr)
-            a += ((rand - 0.5) * 2.0) * iRotSpeed * PI;
-        else if (wr > wl)
-            a -= rand * iRotSpeed * PI;
-        else if (wl > wr)
-            a += rand * iRotSpeed * PI;
-    }
+    a += (wf > iDensityThreshold) ? PI + ((rand - 0.5) * 2.0) * iSenseAngle
+        : (wf < wl && wf < wr) ? ((rand - 0.5) * 2.0) * iRotSpeed * PI
+                : wr > wl ? -rand * iRotSpeed * PI
+                    : wl > wr ? rand * iRotSpeed * PI : 0;
 
-    if (wf > iDensityThreshold)
-        a += PI + ((rand - 0.5) * 2.0) * iSenseAngle;
-    
-    vec2 vel = vec2(cos(a), sin(a)) * 1.0;
+    vec2 vel = vec2(cos(a), sin(a)) * 2.0;
     vec2 pos = src[i];
     vec2 npos = pos + vel;
 

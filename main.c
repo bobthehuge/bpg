@@ -22,6 +22,9 @@
 #define FG_COLOR COLOR_INVERT(BG_COLOR)
 #define FADE_COLOR CLITERAL(Color){0, 0, 0, 2}
 
+#define WAVES 64
+#define CLUSTER_SIZE 4
+
 #define WIN_WIDTH 1920
 #define WIN_HEIGHT 1080
 #define TEX_WIDTH 2560
@@ -35,8 +38,8 @@
 // #define WIN_CENTER CLITERAL(Vector2){TEX_WIDTH/2.0, TEX_HEIGHT/2.0}
 
 // #define BLOB_COUNT 1000000
-#define BLOB_COUNT 100000
-// #define BLOB_COUNT 4096
+// #define BLOB_COUNT 100000
+#define BLOB_COUNT 32768
 // #define BLOB_COUNT 2048
 // #define BLOB_COUNT 256
 // #define BLOB_COUNT 4
@@ -46,7 +49,7 @@
 // #define SPAWN_RADIUS TEX_HEIGHT/2
 #define SPAWN_RADIUS 300
 
-#define LOCAL_SIZE 256
+// #define LOCAL_SIZE 256
 #define RGBA8 RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
 
 #define MENU_SHOW 0b00000001
@@ -409,7 +412,7 @@ int main(void)
             );
 
             rlComputeShaderDispatch(
-                TEX_WIDTH * TEX_HEIGHT / 32,
+                TEX_WIDTH * TEX_HEIGHT / WAVES,
                 1,
                 1
             );
@@ -466,7 +469,7 @@ int main(void)
                 1
             );
 
-            rlComputeShaderDispatch(BLOB_COUNT / 32, 1, 1);
+            rlComputeShaderDispatch(BLOB_COUNT / WAVES, 1, 1);
         rlDisableShader();
 
         BeginDrawing();
