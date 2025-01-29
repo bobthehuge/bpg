@@ -1,10 +1,8 @@
-#version 430
-#define WAVES 64
-
-// #define LOCAL_SIZE 256
+#version 430                                                                   
+#define WAVES X                                                                
+// DO NOT EDIT ABOVE
 
 layout (local_size_x = WAVES) in;
-
 layout(binding = 3, rgba8) uniform image2D iTex;
 
 uniform ivec2 iResolution;
@@ -27,8 +25,8 @@ void main()
             ivec2 pos = ivec2(id) + ivec2(offx, offy);
 
             if (pos.x >= 0 && pos.x < iResolution.x && 
-                pos.y >= 0 && pos.y < iResolution.y
-            ) {
+                pos.y >= 0 && pos.y < iResolution.y)
+            {
                 sum += imageLoad(iTex, pos);
             }
         }

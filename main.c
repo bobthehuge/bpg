@@ -1,36 +1,33 @@
 #include <math.h>
-#define _POSIX_C_SOURCE 199309L
+// #define _POSIX_C_SOURCE 199309L
 
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/time.h>
-#include <time.h>
 #include <unistd.h>
 
-#define SEED time(NULL)
-// #define SEED 42
+#define XLEN(s) sizeof(STR(s)) - 1
+#define XSTR(s) STR(s)
+#define STR(s) #s
+#define LINESIZE 80
 
-// #define BG_COLOR RAYWHITE
 #define COLOR_INVERT(c) CLITERAL(Color){255-(c).r, 255-(c).g, 255-(c).b, (c).a}
 #define SEMI_COLOR(c) CLITERAL(Color){20+(c).r, 20+(c).g, 20+(c).b, (c).a}
-// #define BG_COLOR CLITERAL(Color){30, 30, 30, 255}
 #define BG_COLOR BLACK
 #define MG_COLOR SEMI_COLOR(BG_COLOR)
 #define FG_COLOR COLOR_INVERT(BG_COLOR)
 #define FADE_COLOR CLITERAL(Color){0, 0, 0, 2}
 
-#define WAVES 64
-#define CLUSTER_SIZE 4
+#define WAVES 32
 
 #define WIN_WIDTH 1920
 #define WIN_HEIGHT 1080
 #define TEX_WIDTH 2560
 #define TEX_HEIGHT 1440
-// #define TEX_WIDTH WIN_WIDTH
-// #define TEX_HEIGHT WIN_HEIGHT
 
 #define TEX_RECT CLITERAL(Rectangle){0,0,TEX_WIDTH,TEX_HEIGHT}
 #define TEX_CENTER CLITERAL(Vector2){TEX_WIDTH/2.0,TEX_HEIGHT/2.0}
@@ -38,18 +35,14 @@
 // #define WIN_CENTER CLITERAL(Vector2){TEX_WIDTH/2.0, TEX_HEIGHT/2.0}
 
 // #define BLOB_COUNT 1000000
-// #define BLOB_COUNT 100000
-#define BLOB_COUNT 32768
-// #define BLOB_COUNT 2048
-// #define BLOB_COUNT 256
-// #define BLOB_COUNT 4
+#define BLOB_COUNT 100000
+// #define BLOB_COUNT 32768
 
 #define VEC2FMT "{ x:%f, y:%f }"
 #define VEC2IFMT "{ x:%d, y:%d }"
 // #define SPAWN_RADIUS TEX_HEIGHT/2
 #define SPAWN_RADIUS 300
 
-// #define LOCAL_SIZE 256
 #define RGBA8 RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
 
 #define MENU_SHOW 0b00000001
@@ -95,7 +88,7 @@ static struct settings settings = {
     .sense_angle = 20,
     .angle_offset = 20,
     .decay_rate = 0.050,
-    .density_threshold = 10,
+    .density_threshold = 16,
 };
 
 void draw_settings(void)
@@ -289,27 +282,47 @@ int main(void)
     ToggleFullscreen();
 
     Image tmp_img = GenImageColor(TEX_WIDTH, TEX_HEIGHT, BLACK);
-    Texture2D texture = LoadTextureFromImage(tmp_img);
+    Texture2D blob_map = LoadTextureFromImage(tmp_img);
+    SetTextureFilter(blob_map, TEXTURE_FILTER_BILINEAR);
     UnloadImage(tmp_img);
-    SetTextureFilter(texture, TEXTURE_FILTER_BILINEAR);
 
-    char *com_code = LoadFileText("compute.glsl");
-    int com_shader = rlCompileShader(com_code, RL_COMPUTE_SHADER);
-    int com_prog = rlLoadComputeShaderProgram(com_shader);
-    UnloadFileText(com_code);
+    char *part_code = LoadFileText("particle.glsl");
+    memcpy(
+        part_code + LINESIZE + sizeof("#define WAVES"),
+        XSTR(WAVES),
+        XLEN(WAVES)
+    );
+    memcpy(
+        part_code + 2*LINESIZE + sizeof("#define BLOB_COUNT"),
+        XSTR(BLOB_COUNT),
+        XLEN(BLOB_COUNT)
+    );
+    memcpy(
+        part_code + 3*LINESIZE + sizeof("#define CLUSTER_SIZE"),
+        XSTR(CLUSTER_SIZE),
+        XLEN(CLUSTER_SIZE)
+    );
+    int part_shader = rlCompileShader(part_code, RL_COMPUTE_SHADER);
+    int part_prog = rlLoadComputeShaderProgram(part_shader);
+    UnloadFileText(part_code);
 
     char *dif_code = LoadFileText("diffuse.glsl");
+    memcpy(
+        dif_code + LINESIZE + sizeof("#define WAVES"),
+        XSTR(WAVES),
+        XLEN(WAVES)
+    );
     int dif_shader = rlCompileShader(dif_code, RL_COMPUTE_SHADER);
     int dif_prog = rlLoadComputeShaderProgram(dif_shader);
     UnloadFileText(dif_code);
 
-    int com_res_loc = rlGetLocationUniform(com_prog, "iResolution");
-    int com_time_loc = rlGetLocationUniform(com_prog, "iTime");
-    int com_speed_loc = rlGetLocationUniform(com_prog, "iRotSpeed");
-    int com_size_loc = rlGetLocationUniform(com_prog, "iSensorSize");
-    int com_angle_loc = rlGetLocationUniform(com_prog, "iSenseAngle");
-    int com_dstoff_loc = rlGetLocationUniform(com_prog, "iDstOffset");
-    int com_thresh_loc = rlGetLocationUniform(com_prog, "iDensityThreshold");
+    int part_res_loc = rlGetLocationUniform(part_prog, "iResolution");
+    int part_time_loc = rlGetLocationUniform(part_prog, "iTime");
+    int part_speed_loc = rlGetLocationUniform(part_prog, "iRotSpeed");
+    int part_size_loc = rlGetLocationUniform(part_prog, "iSensorSize");
+    int part_angle_loc = rlGetLocationUniform(part_prog, "iSenseAngle");
+    int part_dstoff_loc = rlGetLocationUniform(part_prog, "iDstOffset");
+    int part_thresh_loc = rlGetLocationUniform(part_prog, "iDensityThreshold");
 
     int dif_res_loc = rlGetLocationUniform(dif_prog, "iResolution");
     int dif_dec_loc = rlGetLocationUniform(dif_prog, "iDecay");
@@ -317,35 +330,20 @@ int main(void)
     const int res[2] = {TEX_WIDTH, TEX_HEIGHT};
 
     Vector2 *blobs_pos = malloc(BLOB_COUNT * sizeof(Vector2));
-    // Vector2 blobs_vel = {0};
     float *blobs_rot = malloc(BLOB_COUNT * sizeof(float));
 
-    // struct timespec t;
-    // clock_gettime(CLOCK_REALTIME, &t);
     struct timeval d;
     gettimeofday(&d, NULL);
 
-    g_seed = d.tv_sec * 100 + d.tv_usec / 100;
+    g_seed = (d.tv_sec * 100 + d.tv_usec / 100) * getpid();
     srand(g_seed);
 
     SetTraceLogLevel(LOG_INFO);
     log_infos();
     SetTraceLogLevel(LOG_WARNING);
 
-    // TraceLog(LOG_WARNING, "%f", randf());
-    // TraceLog(LOG_WARNING, "%f", randf());
-    // TraceLog(LOG_WARNING, "%f", randf());
-
-    // t = vec2(randf(), randf());
-    // n = norm(t);
-    // t = t * (min(n, radius) / n);
-
     for (int i = 0; i < BLOB_COUNT; i++)
     {
-        // Vector2 pos = {
-        //     randf() * TEX_WIDTH,
-        //     randf() * TEX_HEIGHT,
-        // };
         float theta = randf() * 2 * PI;
         float r = sqrtf(randf());
         Vector2 pos = {
@@ -354,24 +352,18 @@ int main(void)
         };
 
         blobs_pos[i] = pos;
-
-        // blobs_rot[i] = randf() * 2 * PI;
         Vector2 org = Vector2Normalize(Vector2Subtract(TEX_CENTER, pos));
-
-        // blobs_rot[i] = atan2f(org.y, org.x);
         blobs_rot[i] = randf() * 2 * PI;
     }
 
     int ssbo_pos = rlLoadShaderBuffer(
         BLOB_COUNT * sizeof(Vector2),
-        // NULL,
         blobs_pos,
         RL_DYNAMIC_COPY
     );
     
     int ssbo_rot = rlLoadShaderBuffer(
         BLOB_COUNT * sizeof(float),
-        // NULL,
         blobs_rot,
         RL_DYNAMIC_COPY
     );
@@ -381,7 +373,7 @@ int main(void)
   
     rlBindShaderBuffer(ssbo_pos, 1);
     rlBindShaderBuffer(ssbo_rot, 2);
-    rlBindImageTexture(texture.id, 3, RGBA8, false);
+    rlBindImageTexture(blob_map.id, 3, RGBA8, false);
 
     SetTargetFPS(settings.target_fps);
 
@@ -410,38 +402,33 @@ int main(void)
                 SHADER_UNIFORM_FLOAT,
                 1
             );
-
-            rlComputeShaderDispatch(
-                TEX_WIDTH * TEX_HEIGHT / WAVES,
-                1,
-                1
-            );
+            rlComputeShaderDispatch(TEX_WIDTH * TEX_HEIGHT / WAVES, 1, 1);
         rlDisableShader();
-        
-        rlEnableShader(com_prog);
+
+        rlEnableShader(part_prog);
             rlSetUniform(
-                com_res_loc,
+                part_res_loc,
                 &res,
                 SHADER_UNIFORM_IVEC2,
                 1
             );
 
             rlSetUniform(
-                com_speed_loc,
+                part_speed_loc,
                 &settings.rotation_speed,
                 SHADER_UNIFORM_FLOAT,
                 1
             );
 
             rlSetUniform(
-                com_time_loc,
+                part_time_loc,
                 &elapsed,
                 SHADER_UNIFORM_FLOAT,
                 1
             );
 
             rlSetUniform(
-                com_size_loc,
+                part_size_loc,
                 &settings.sensor_size,
                 SHADER_UNIFORM_INT,
                 1
@@ -449,33 +436,32 @@ int main(void)
 
             float angle = ((float)settings.sense_angle * PI) / 180;
             rlSetUniform(
-                com_angle_loc,
+                part_angle_loc,
                 &angle,
                 SHADER_UNIFORM_FLOAT,
                 1
             );
 
             rlSetUniform(
-                com_dstoff_loc,
+                part_dstoff_loc,
                 &settings.angle_offset,
                 SHADER_UNIFORM_FLOAT,
                 1
             );
 
             rlSetUniform(
-                com_thresh_loc,
+                part_thresh_loc,
                 &settings.density_threshold,
                 SHADER_UNIFORM_INT,
                 1
             );
-
             rlComputeShaderDispatch(BLOB_COUNT / WAVES, 1, 1);
         rlDisableShader();
 
         BeginDrawing();
             ClearBackground(BLACK);
                 DrawTexturePro(
-                    texture,
+                    blob_map,
                     TEX_RECT,
                     WIN_RECT,
                     Vector2Zero(),
@@ -491,7 +477,11 @@ int main(void)
     
     rlUnloadShaderBuffer(ssbo_pos);
     rlUnloadShaderBuffer(ssbo_rot);
-    rlUnloadShaderProgram(com_prog);
+
+    rlUnloadShaderProgram(part_prog);
+    rlUnloadShaderProgram(dif_prog);
+
+    rlUnloadTexture(blob_map.id);
 
     CloseWindow();
 

@@ -1,28 +1,21 @@
-#version 430
-#define WAVES 64
-
-// #define BLOB_COUNT 1000000
-// #define BLOB_COUNT 100000
-#define BLOB_COUNT 32768
-// #define BLOB_COUNT 2048
-// #define BLOB_COUNT 256
-// #define BLOB_COUNT 4
+#version 430                                                                   
+#define WAVES X                                                                
+#define BLOB_COUNT X                                                           
+#define CLUSTER_SIZE X                                                         
+// DO NOT EDIT ABOVE
 
 #define PI 3.1415f
 
-layout (local_size_x = WAVES) in;
-
-layout(std430, binding = 1) buffer blobsPosLayout {
+layout(local_size_x = WAVES) in;
+layout(binding = 3, rgba8) uniform image2D blobTex;
+layout(std430, binding = 1) buffer blobsPosLayout
+{
     vec2 src[BLOB_COUNT];
 };
-
-layout(std430, binding = 2) buffer blobsRotLayout {
+layout(std430, binding = 2) buffer blobsRotLayout
+{
     float rots[BLOB_COUNT];
 };
-
-// layout(binding = 3, r32ui) uniform uimage2D iTex;
-layout(binding = 3, rgba8) uniform image2D iTex;
-// uniform writeonly image2D iTex;
 
 uniform int iFrame;
 uniform ivec2 iResolution;
@@ -74,7 +67,7 @@ float sense(uint id, float offset)
             int posx = min(iResolution.x - 1, max(0, pos.x + offx));
             int posy = min(iResolution.y - 1, max(0, pos.y + offy));
 
-            sum += imageLoad(iTex, ivec2(posx, posy)).r;
+            sum += imageLoad(blobTex, ivec2(posx, posy)).r;
         }
     }
 
@@ -92,7 +85,6 @@ void main()
     
     float a = rots[i];
     float rand = randf(i);
-    // float a = r * TWOPI;
 
     // forward
     float wf = sense(i, 0);
@@ -112,13 +104,19 @@ void main()
 
     a = (npos.x < 0 || npos.y < 0 || npos.x >= fRes.x || npos.y >= fRes.y)
         ? rand * 2 * PI : a;
-
     npos.x = min(fRes.x, max(0, npos.x));
     npos.y = min(fRes.y, max(0, npos.y));
 
-    imageStore(iTex, ivec2(npos), vec4(1.0, 1.0, 1.0, 1.0));
+    for (float offx = -1; offx < 1; offx++)
+    {
+        for (float offy = -1; offy < 1; offy++)
+        {
+            float posx = min(fRes.x - 1, max(0, npos.x + offx));
+            float posy = min(fRes.y - 1, max(0, npos.y + offy));
+            imageStore(blobTex, ivec2(posx,posy), vec4(1.0, 1.0, 1.0, 1.0));
+        }
+    }
 
     src[i] = npos;
-    rots[i] = abs(mod(a, 2 * PI));
-    // rots[i] = a;
+    rots[i] = mod(a, 2 * PI);
 }
